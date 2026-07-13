@@ -30,7 +30,12 @@ def list_tasks() -> list[dict[str, object]]:
     return tasks
 
 
-@app.get("/tasks/{task_id}", summary="Get one task", description="Returns a task by its ID.")
+@app.get(
+    "/tasks/{task_id}",
+    summary="Get one task",
+    description="Returns a task by its ID.",
+    response_model=None,
+)
 def get_task(task_id: int) -> dict[str, object] | JSONResponse:
     task = next((task for task in tasks if task["id"] == task_id), None)
     if task is None:
@@ -45,6 +50,7 @@ def get_task(task_id: int) -> dict[str, object] | JSONResponse:
     status_code=201,
     summary="Create a task",
     description="Creates a task from a non-empty title and marks it incomplete.",
+    response_model=None,
 )
 def create_task(payload: dict = Body(...)) -> dict[str, object] | JSONResponse:
     title = payload.get("title")
@@ -64,6 +70,7 @@ def create_task(payload: dict = Body(...)) -> dict[str, object] | JSONResponse:
     "/tasks/{task_id}",
     summary="Update a task",
     description="Updates a task title, completion state, or both.",
+    response_model=None,
 )
 def update_task(
     task_id: int, payload: dict = Body(...)
@@ -99,6 +106,7 @@ def update_task(
     status_code=204,
     summary="Delete a task",
     description="Removes a task by its ID.",
+    response_model=None,
 )
 def delete_task(task_id: int) -> None | JSONResponse:
     index = next((i for i, task in enumerate(tasks) if task["id"] == task_id), None)
