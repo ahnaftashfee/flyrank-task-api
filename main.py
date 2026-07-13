@@ -2,7 +2,11 @@ from fastapi import Body, FastAPI
 from fastapi.responses import JSONResponse
 
 
-app = FastAPI()
+app = FastAPI(
+    title="Task API",
+    version="1.0",
+    description="A small in-memory CRUD API for managing a to-do list.",
+)
 
 tasks = [
     {"id": 1, "title": "Learn FastAPI", "done": False},
@@ -11,22 +15,22 @@ tasks = [
 ]
 
 
-@app.get("/", summary="Describe the API")
+@app.get("/", summary="Describe the API", description="Returns basic API metadata.")
 def root() -> dict[str, object]:
     return {"name": "Task API", "version": "1.0", "endpoints": ["/tasks"]}
 
 
-@app.get("/health", summary="Check API health")
+@app.get("/health", summary="Check API health", description="Confirms the server is running.")
 def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
-@app.get("/tasks", summary="List all tasks")
+@app.get("/tasks", summary="List all tasks", description="Returns every task in memory.")
 def list_tasks() -> list[dict[str, object]]:
     return tasks
 
 
-@app.get("/tasks/{task_id}", summary="Get one task")
+@app.get("/tasks/{task_id}", summary="Get one task", description="Returns a task by its ID.")
 def get_task(task_id: int) -> dict[str, object] | JSONResponse:
     task = next((task for task in tasks if task["id"] == task_id), None)
     if task is None:
@@ -36,7 +40,12 @@ def get_task(task_id: int) -> dict[str, object] | JSONResponse:
     return task
 
 
-@app.post("/tasks", status_code=201, summary="Create a task")
+@app.post(
+    "/tasks",
+    status_code=201,
+    summary="Create a task",
+    description="Creates a task from a non-empty title and marks it incomplete.",
+)
 def create_task(payload: dict = Body(...)) -> dict[str, object] | JSONResponse:
     title = payload.get("title")
     if not isinstance(title, str) or not title.strip():
@@ -51,7 +60,11 @@ def create_task(payload: dict = Body(...)) -> dict[str, object] | JSONResponse:
     return task
 
 
-@app.put("/tasks/{task_id}", summary="Update a task")
+@app.put(
+    "/tasks/{task_id}",
+    summary="Update a task",
+    description="Updates a task title, completion state, or both.",
+)
 def update_task(
     task_id: int, payload: dict = Body(...)
 ) -> dict[str, object] | JSONResponse:
@@ -81,7 +94,12 @@ def update_task(
     return task
 
 
-@app.delete("/tasks/{task_id}", status_code=204, summary="Delete a task")
+@app.delete(
+    "/tasks/{task_id}",
+    status_code=204,
+    summary="Delete a task",
+    description="Removes a task by its ID.",
+)
 def delete_task(task_id: int) -> None | JSONResponse:
     index = next((i for i, task in enumerate(tasks) if task["id"] == task_id), None)
     if index is None:
