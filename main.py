@@ -110,10 +110,18 @@ def create_task(payload: dict = Body(...)) -> dict[str, object] | JSONResponse:
             content={"error": "A non-empty title is required"},
         )
 
-    next_id = max((task["id"] for task in tasks), default=0) + 1
-    task = {"id": next_id, "title": title.strip(), "done": False}
-    tasks.append(task)
-    return task
+    with get_connection() as connection:
+        cursor = connection.execute(
+            "INSERT INTO tasks (title, done) VALUES (?, 0)",
+            (title.strip(),),
+        )
+        row = connection.execute(
+            "SELECT id, title, done FROM tasks WHERE id = ?",
+            (cursor.lastrowid,),
+        ).fetchone()
+
+    assert row is not None
+    return row_to_task(row)
 
 
 @app.put(
