@@ -96,7 +96,13 @@ def get_task(task_id: int) -> dict[str, object] | JSONResponse:
     description="Creates a task from a non-empty title and marks it incomplete.",
     response_model=None,
 )
-def create_task(payload: dict = Body(...)) -> dict[str, object] | JSONResponse:
+def create_task(
+    payload: object | None = Body(default=None),
+) -> dict[str, object] | JSONResponse:
+    if not isinstance(payload, dict):
+        return JSONResponse(
+            status_code=400, content={"error": "A JSON object is required"}
+        )
     title = payload.get("title")
     if not isinstance(title, str) or not title.strip():
         return JSONResponse(
@@ -125,7 +131,7 @@ def create_task(payload: dict = Body(...)) -> dict[str, object] | JSONResponse:
     response_model=None,
 )
 def update_task(
-    task_id: int, payload: dict = Body(...)
+    task_id: int, payload: object | None = Body(default=None)
 ) -> dict[str, object] | JSONResponse:
     with get_connection() as connection:
         row = connection.execute(
@@ -137,7 +143,11 @@ def update_task(
                 status_code=404, content={"error": f"Task {task_id} not found"}
             )
 
-        if not payload or any(key not in {"title", "done"} for key in payload):
+        if (
+            not isinstance(payload, dict)
+            or not payload
+            or any(key not in {"title", "done"} for key in payload)
+        ):
             return JSONResponse(
                 status_code=400, content={"error": "Provide title and/or done"}
             )
