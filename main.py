@@ -50,12 +50,6 @@ app = FastAPI(
 
 initialize_database()
 
-tasks = [
-    {"id": 1, "title": "Learn FastAPI", "done": False},
-    {"id": 2, "title": "Build a CRUD API", "done": False},
-    {"id": 3, "title": "Publish to GitHub", "done": True},
-]
-
 
 @app.get("/", summary="Describe the API", description="Returns basic API metadata.")
 def root() -> dict[str, object]:
@@ -133,30 +127,52 @@ def create_task(payload: dict = Body(...)) -> dict[str, object] | JSONResponse:
 def update_task(
     task_id: int, payload: dict = Body(...)
 ) -> dict[str, object] | JSONResponse:
-    task = next((task for task in tasks if task["id"] == task_id), None)
-    if task is None:
-        return JSONResponse(
-            status_code=404, content={"error": f"Task {task_id} not found"}
+    with get_connection() as connection:
+        row = connection.execute(
+            "SELECT id, title, done FROM tasks WHERE id = ?",
+            (task_id,),
+        ).fetchone()
+        if row is None:
+            return JSONResponse(
+                status_code=404, content={"error": f"Task {task_id} not found"}
+            )
+
+        if not payload or any(key not in {"title", "done"} for key in payload):
+            return JSONResponse(
+                status_code=400, content={"error": "Provide title and/or done"}
+            )
+
+        title = row["title"]
+        done = bool(row["done"])
+
+        if "title" in payload:
+            title = payload["title"]
+            if not isinstance(title, str) or not title.strip():
+                return JSONResponse(
+                    status_code=400,
+                    content={"error": "A non-empty title is required"},
+                )
+            title = title.strip()
+
+        if "done" in payload:
+            if not isinstance(payload["done"], bool):
+                return JSONResponse(
+                    status_code=400,
+                    content={"error": "done must be true or false"},
+                )
+            done = payload["done"]
+
+        connection.execute(
+            "UPDATE tasks SET title = ?, done = ? WHERE id = ?",
+            (title, done, task_id),
         )
+        updated_row = connection.execute(
+            "SELECT id, title, done FROM tasks WHERE id = ?",
+            (task_id,),
+        ).fetchone()
 
-    if not payload or any(key not in {"title", "done"} for key in payload):
-        return JSONResponse(status_code=400, content={"error": "Provide title and/or done"})
-
-    if "title" in payload:
-        title = payload["title"]
-        if not isinstance(title, str) or not title.strip():
-            return JSONResponse(
-                status_code=400, content={"error": "A non-empty title is required"}
-            )
-        task["title"] = title.strip()
-
-    if "done" in payload:
-        if not isinstance(payload["done"], bool):
-            return JSONResponse(
-                status_code=400, content={"error": "done must be true or false"}
-            )
-        task["done"] = payload["done"]
-    return task
+    assert updated_row is not None
+    return row_to_task(updated_row)
 
 
 @app.delete(
@@ -167,10 +183,10 @@ def update_task(
     response_model=None,
 )
 def delete_task(task_id: int) -> None | JSONResponse:
-    index = next((i for i, task in enumerate(tasks) if task["id"] == task_id), None)
-    if index is None:
+    with get_connection() as connection:
+        cursor = connection.execute("DELETE FROM tasks WHERE id = ?", (task_id,))
+    if cursor.rowcount == 0:
         return JSONResponse(
             status_code=404, content={"error": f"Task {task_id} not found"}
         )
-    tasks.pop(index)
     return None
