@@ -38,6 +38,10 @@ def initialize_database() -> None:
             )
 
 
+def row_to_task(row: sqlite3.Row) -> dict[str, object]:
+    return {"id": row["id"], "title": row["title"], "done": bool(row["done"])}
+
+
 app = FastAPI(
     title="Task API",
     version="1.0",
@@ -63,9 +67,13 @@ def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
-@app.get("/tasks", summary="List all tasks", description="Returns every task in memory.")
+@app.get("/tasks", summary="List all tasks", description="Returns every task in SQLite.")
 def list_tasks() -> list[dict[str, object]]:
-    return tasks
+    with get_connection() as connection:
+        rows = connection.execute(
+            "SELECT id, title, done FROM tasks ORDER BY id"
+        ).fetchall()
+    return [row_to_task(row) for row in rows]
 
 
 @app.get(
@@ -75,12 +83,16 @@ def list_tasks() -> list[dict[str, object]]:
     response_model=None,
 )
 def get_task(task_id: int) -> dict[str, object] | JSONResponse:
-    task = next((task for task in tasks if task["id"] == task_id), None)
-    if task is None:
+    with get_connection() as connection:
+        row = connection.execute(
+            "SELECT id, title, done FROM tasks WHERE id = ?",
+            (task_id,),
+        ).fetchone()
+    if row is None:
         return JSONResponse(
             status_code=404, content={"error": f"Task {task_id} not found"}
         )
-    return task
+    return row_to_task(row)
 
 
 @app.post(
