@@ -1,19 +1,34 @@
-from fastapi import Body, FastAPI
+from fastapi import Body, FastAPI, Request
 from fastapi.responses import JSONResponse
 
+from auth import APIError, router as auth_router
 from dependencies import task_service
 
 
 app = FastAPI(
     title="Task API",
-    version="2.0",
-    description="A PostgreSQL-backed CRUD API for managing a to-do list.",
+    version="3.0",
+    description="A PostgreSQL task API secured with Supabase Auth.",
 )
+
+app.include_router(auth_router)
+
+
+@app.exception_handler(APIError)
+def handle_api_error(_request: Request, error: APIError) -> JSONResponse:
+    return JSONResponse(
+        status_code=error.status_code,
+        content={"error": error.message},
+    )
 
 
 @app.get("/", summary="Describe the API", description="Returns basic API metadata.")
 def root() -> dict[str, object]:
-    return {"name": "Task API", "version": "2.0", "endpoints": ["/tasks"]}
+    return {
+        "name": "Task API",
+        "version": "3.0",
+        "endpoints": ["/tasks", "/auth/signup", "/auth/login", "/docs"],
+    }
 
 
 @app.get("/health", summary="Check API health", description="Checks the API and database.")

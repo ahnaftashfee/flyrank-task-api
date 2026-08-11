@@ -8,7 +8,7 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY main.py dependencies.py service.py ./
+COPY main.py auth.py auth_service.py dependencies.py service.py ./
 COPY repositories ./repositories
 
 RUN useradd --create-home appuser && chown -R appuser:appuser /app
