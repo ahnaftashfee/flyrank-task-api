@@ -1,6 +1,6 @@
 # Task API
 
-A FastAPI CRUD service backed by PostgreSQL and run as a two-container Docker Compose stack. This repository contains the FlyRank Backend AI Engineering assignments BE-01, BE-02, and BE-04.
+A FastAPI CRUD service backed by PostgreSQL, secured with Supabase Auth, and run as a two-container Docker Compose stack. This repository contains the FlyRank Backend AI Engineering assignments BE-01, BE-02, BE-04, and BE-03.
 
 ## Start the stack
 
@@ -8,6 +8,7 @@ Requirements:
 
 - Docker Desktop
 - Docker Compose v2
+- A free Supabase project with email/password authentication enabled
 
 Copy the environment template, then start both the API and PostgreSQL:
 
@@ -46,24 +47,43 @@ Do not add `--volumes` when you want to keep the database.
 | `POSTGRES_USER` | Local database user |
 | `POSTGRES_PASSWORD` | Local database password |
 | `DATABASE_URL` | Psycopg connection string used by the API |
+| `SUPABASE_URL` | Project URL from the Supabase dashboard |
+| `SUPABASE_KEY` | Publishable key, or legacy anon key |
 | `PORT` | Host port mapped to the API container |
 
 The hostname in `DATABASE_URL` is `db`, matching the PostgreSQL service name in `docker-compose.yml`.
+
+Use a publishable/anon key for `SUPABASE_KEY`. Never use or commit a Supabase secret or `service_role` key. Hosted Supabase projects require email confirmation by default, so confirm the signup email before testing login unless confirmation is disabled for an isolated development project.
 
 ## Architecture
 
 ```text
 HTTP request
-    -> FastAPI route (main.py)
-    -> TaskService (service.py)
-    -> TaskRepository interface (repositories/base.py)
-    -> PostgresTaskRepository (repositories/postgres.py)
-    -> PostgreSQL
+    -> Public/task route
+        -> TaskService
+        -> TaskRepository
+        -> PostgreSQL
+    -> Protected route
+        -> HTTPBearer dependency
+        -> Supabase get_user(jwt)
+        -> Verified user
 ```
 
 The A2 version stored data directly in SQLite route functions, so it did not yet have the interface described by the A3 brief. For A3, the storage operations were extracted behind `TaskRepository`, and `TaskService` was added between the routes and repository. PostgreSQL is now selected in `dependencies.py`.
 
 The public route paths, request bodies, success codes, validation rules, and error responses did not change during the PostgreSQL migration. The service contains no SQL and the routes do not import Psycopg. Future storage changes require a new repository implementation and one wiring change rather than another route rewrite.
+
+## Authentication flow
+
+`POST /auth/signup` creates an account through Supabase Auth. After the account is confirmed, `POST /auth/login` returns an access token and refresh token. Clients send the access token on protected requests:
+
+```http
+Authorization: Bearer ACCESS_TOKEN
+```
+
+The reusable FastAPI dependency in `auth.py` extracts the Bearer token and calls Supabase `get_user(jwt)`. Protected route handlers receive only a verified user; they never trust an unverified JWT payload.
+
+The authentication client is created per operation because the Supabase Python client retains session state. This prevents one request's user session from being shared with another request. Logout revokes the current Supabase session and its refresh token. The already-issued access token can remain valid until its expiry, which is normal for stateless JWTs.
 
 ## Database initialization and persistence
 
@@ -95,21 +115,27 @@ Only use the following when you intentionally want to erase the local database a
 docker compose down --volumes
 ```
 
-## Endpoints
+## API reference
 
-| Method | Path | Description | Success status |
-| --- | --- | --- | --- |
-| GET | `/` | API metadata | 200 |
-| GET | `/health` | Check API and PostgreSQL | 200 |
-| GET | `/tasks` | List all tasks | 200 |
-| GET | `/tasks/{id}` | Get one task | 200 |
-| POST | `/tasks` | Create a task with `title` | 201 |
-| PUT | `/tasks/{id}` | Update `title` and/or `done` | 200 |
-| DELETE | `/tasks/{id}` | Delete a task | 204 |
+| Method | Path | Authentication | Description | Success |
+| --- | --- | --- | --- | --- |
+| GET | `/` | No | API metadata | 200 |
+| GET | `/health` | No | Check API and PostgreSQL | 200 |
+| GET | `/tasks` | No | List all tasks | 200 |
+| GET | `/tasks/{id}` | No | Get one task | 200 |
+| POST | `/tasks` | No | Create a task with `title` | 201 |
+| PUT | `/tasks/{id}` | No | Update `title` and/or `done` | 200 |
+| DELETE | `/tasks/{id}` | No | Delete a task | 204 |
+| POST | `/auth/signup` | No | Create a Supabase user | 201 |
+| POST | `/auth/login` | No | Return access and refresh tokens | 200 |
+| POST | `/auth/logout` | Bearer JWT | Revoke the current session | 204 |
+| GET | `/public/info` | No | Return public information | 200 |
+| GET | `/protected/profile` | Bearer JWT | Return verified user metadata | 200 |
+| GET | `/protected/dashboard` | Bearer JWT | Demonstrate dependency reuse | 200 |
 
 Unknown task IDs return a JSON `404` error. POST and PUT reject invalid input with a JSON `400` error.
 
-## Example request
+## Example requests
 
 ```console
 $ curl -i -X POST http://localhost:8000/tasks \
@@ -120,6 +146,35 @@ content-type: application/json
 
 {"id":4,"title":"Prove PostgreSQL persistence","done":false}
 ```
+
+Sign up and log in:
+
+```bash
+curl -i -X POST http://localhost:8000/auth/signup \
+  -H "Content-Type: application/json" \
+  -d '{"email":"you@example.com","password":"password123"}'
+
+curl -i -X POST http://localhost:8000/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"you@example.com","password":"password123"}'
+```
+
+Use the returned access token:
+
+```bash
+curl -i http://localhost:8000/protected/profile \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN"
+```
+
+Signup or login requests without both fields return `400`. Incorrect login credentials and missing, malformed, tampered, or expired access tokens return `401` with a JSON error message.
+
+## Swagger Bearer authentication
+
+Open [http://localhost:8000/docs](http://localhost:8000/docs), click **Authorize**, and paste the access token returned by `/auth/login`. Protected endpoints display lock icons and automatically send the Bearer token when using **Try it out**.
+
+The screenshot below was captured from the running Week 4 API. It shows the authentication routes, public route, two protected routes, Bearer authorization control, and lock icons.
+
+![Swagger UI showing Supabase authentication and protected routes](docs/swagger-auth.png)
 
 ## Useful Docker commands
 
