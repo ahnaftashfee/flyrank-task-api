@@ -1,73 +1,30 @@
-import sqlite3
-from pathlib import Path
-
 from fastapi import Body, FastAPI
 from fastapi.responses import JSONResponse
 
-
-DATABASE_PATH = Path(__file__).with_name("tasks.db")
-SEED_TASKS = (
-    ("Learn FastAPI", False),
-    ("Build a CRUD API", False),
-    ("Publish to GitHub", True),
-)
-
-
-def get_connection() -> sqlite3.Connection:
-    connection = sqlite3.connect(DATABASE_PATH)
-    connection.row_factory = sqlite3.Row
-    return connection
-
-
-def initialize_database() -> None:
-    with get_connection() as connection:
-        connection.execute(
-            """
-            CREATE TABLE IF NOT EXISTS tasks (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                title TEXT NOT NULL,
-                done INTEGER NOT NULL DEFAULT 0 CHECK (done IN (0, 1))
-            )
-            """
-        )
-        task_count = connection.execute("SELECT COUNT(*) FROM tasks").fetchone()[0]
-        if task_count == 0:
-            connection.executemany(
-                "INSERT INTO tasks (title, done) VALUES (?, ?)",
-                SEED_TASKS,
-            )
-
-
-def row_to_task(row: sqlite3.Row) -> dict[str, object]:
-    return {"id": row["id"], "title": row["title"], "done": bool(row["done"])}
+from dependencies import task_service
 
 
 app = FastAPI(
     title="Task API",
-    version="1.0",
-    description="A small SQLite-backed CRUD API for managing a to-do list.",
+    version="2.0",
+    description="A PostgreSQL-backed CRUD API for managing a to-do list.",
 )
-
-initialize_database()
 
 
 @app.get("/", summary="Describe the API", description="Returns basic API metadata.")
 def root() -> dict[str, object]:
-    return {"name": "Task API", "version": "1.0", "endpoints": ["/tasks"]}
+    return {"name": "Task API", "version": "2.0", "endpoints": ["/tasks"]}
 
 
-@app.get("/health", summary="Check API health", description="Confirms the server is running.")
+@app.get("/health", summary="Check API health", description="Checks the API and database.")
 def health() -> dict[str, str]:
+    task_service.check_database()
     return {"status": "ok"}
 
 
-@app.get("/tasks", summary="List all tasks", description="Returns every task in SQLite.")
+@app.get("/tasks", summary="List all tasks", description="Returns every task in PostgreSQL.")
 def list_tasks() -> list[dict[str, object]]:
-    with get_connection() as connection:
-        rows = connection.execute(
-            "SELECT id, title, done FROM tasks ORDER BY id"
-        ).fetchall()
-    return [row_to_task(row) for row in rows]
+    return task_service.list_tasks()
 
 
 @app.get(
@@ -77,16 +34,12 @@ def list_tasks() -> list[dict[str, object]]:
     response_model=None,
 )
 def get_task(task_id: int) -> dict[str, object] | JSONResponse:
-    with get_connection() as connection:
-        row = connection.execute(
-            "SELECT id, title, done FROM tasks WHERE id = ?",
-            (task_id,),
-        ).fetchone()
-    if row is None:
+    task = task_service.get_task(task_id)
+    if task is None:
         return JSONResponse(
             status_code=404, content={"error": f"Task {task_id} not found"}
         )
-    return row_to_task(row)
+    return task
 
 
 @app.post(
@@ -109,19 +62,7 @@ def create_task(
             status_code=400,
             content={"error": "A non-empty title is required"},
         )
-
-    with get_connection() as connection:
-        cursor = connection.execute(
-            "INSERT INTO tasks (title, done) VALUES (?, 0)",
-            (title.strip(),),
-        )
-        row = connection.execute(
-            "SELECT id, title, done FROM tasks WHERE id = ?",
-            (cursor.lastrowid,),
-        ).fetchone()
-
-    assert row is not None
-    return row_to_task(row)
+    return task_service.create_task(title.strip())
 
 
 @app.put(
@@ -133,56 +74,47 @@ def create_task(
 def update_task(
     task_id: int, payload: object | None = Body(default=None)
 ) -> dict[str, object] | JSONResponse:
-    with get_connection() as connection:
-        row = connection.execute(
-            "SELECT id, title, done FROM tasks WHERE id = ?",
-            (task_id,),
-        ).fetchone()
-        if row is None:
-            return JSONResponse(
-                status_code=404, content={"error": f"Task {task_id} not found"}
-            )
-
-        if (
-            not isinstance(payload, dict)
-            or not payload
-            or any(key not in {"title", "done"} for key in payload)
-        ):
-            return JSONResponse(
-                status_code=400, content={"error": "Provide title and/or done"}
-            )
-
-        title = row["title"]
-        done = bool(row["done"])
-
-        if "title" in payload:
-            title = payload["title"]
-            if not isinstance(title, str) or not title.strip():
-                return JSONResponse(
-                    status_code=400,
-                    content={"error": "A non-empty title is required"},
-                )
-            title = title.strip()
-
-        if "done" in payload:
-            if not isinstance(payload["done"], bool):
-                return JSONResponse(
-                    status_code=400,
-                    content={"error": "done must be true or false"},
-                )
-            done = payload["done"]
-
-        connection.execute(
-            "UPDATE tasks SET title = ?, done = ? WHERE id = ?",
-            (title, done, task_id),
+    task = task_service.get_task(task_id)
+    if task is None:
+        return JSONResponse(
+            status_code=404, content={"error": f"Task {task_id} not found"}
         )
-        updated_row = connection.execute(
-            "SELECT id, title, done FROM tasks WHERE id = ?",
-            (task_id,),
-        ).fetchone()
 
-    assert updated_row is not None
-    return row_to_task(updated_row)
+    if (
+        not isinstance(payload, dict)
+        or not payload
+        or any(key not in {"title", "done"} for key in payload)
+    ):
+        return JSONResponse(
+            status_code=400, content={"error": "Provide title and/or done"}
+        )
+
+    title = task["title"]
+    done = task["done"]
+
+    if "title" in payload:
+        title = payload["title"]
+        if not isinstance(title, str) or not title.strip():
+            return JSONResponse(
+                status_code=400,
+                content={"error": "A non-empty title is required"},
+            )
+        title = title.strip()
+
+    if "done" in payload:
+        if not isinstance(payload["done"], bool):
+            return JSONResponse(
+                status_code=400,
+                content={"error": "done must be true or false"},
+            )
+        done = payload["done"]
+
+    updated_task = task_service.update_task(task_id, title, done)
+    if updated_task is None:
+        return JSONResponse(
+            status_code=404, content={"error": f"Task {task_id} not found"}
+        )
+    return updated_task
 
 
 @app.delete(
@@ -193,9 +125,7 @@ def update_task(
     response_model=None,
 )
 def delete_task(task_id: int) -> None | JSONResponse:
-    with get_connection() as connection:
-        cursor = connection.execute("DELETE FROM tasks WHERE id = ?", (task_id,))
-    if cursor.rowcount == 0:
+    if not task_service.delete_task(task_id):
         return JSONResponse(
             status_code=404, content={"error": f"Task {task_id} not found"}
         )
