@@ -1,0 +1,21 @@
+{
+  "started_at": "2026-08-15T02:09:36.091462Z",
+  "duration_seconds": 0.383,
+  "catalogue_pages": 3,
+  "discovered_urls": 60,
+  "unique_urls": 60,
+  "attempted_detail_pages": 61,
+  "detail_pages": 60,
+  "pages_fetched": 0,
+  "cache_hits": 63,
+  "network_requests": 1,
+  "valid_records": 60,
+  "invalid_records": 0,
+  "failed_pages": 1,
+  "failed_page_details": [
+    {
+      "url": "https://books.toscrape.com/catalogue/definitely-not-a-real-book/index.html",
+      "reason": "HTTP 404; not cached"
+    }
+  ]
+}
