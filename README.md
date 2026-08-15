@@ -1,6 +1,12 @@
 # Task API
 
-A FastAPI CRUD service backed by PostgreSQL, secured with Supabase Auth, and run as a two-container Docker Compose stack. This repository contains the FlyRank Backend AI Engineering assignments BE-01, BE-02, BE-04, and BE-03.
+A FastAPI CRUD service backed by PostgreSQL, secured with Supabase Auth, and run as a two-container Docker Compose stack. The repository also contains the Week 5 polite scraping pipeline. It preserves the FlyRank Backend AI Engineering work for BE-01, BE-02, BE-04, BE-03, and A9.
+
+## Week 5: The polite scraper
+
+The Python scraper is isolated in [`scraper/`](scraper/). It processes exactly three Books to Scrape catalogue pages, validates 60 unique book records, caches HTML, survives a deliberate broken page, and writes an auditable run report.
+
+See [`scraper/README.md`](scraper/README.md) for the target classification, installation, one-command run instructions, schema, politeness rules, tests, sample output, and real failure-test report.
 
 ## Start the stack
 
